@@ -53,16 +53,23 @@ func (s *stunLogger) ReadFrom(p []byte) (n int, addr net.Addr, err error) {
 
 func main() {
 	publicIP := flag.String("public-ip", "", "IP Address that TURN can be contacted by.")
-	port := flag.Int("port", 3478, "Listening port.")
 	users := flag.String("users", "", "List of username and password (e.g. \"user=pass,user=pass\")")
 	realm := flag.String("realm", "pion.ly", "Realm (defaults to \"pion.ly\")")
+	
+	port := flag.Int("port", 3478, "Listening port.")	
+	minPort := flag.Int("min_port", 50000, "Minimuim UDP Port")
+	maxPort := flag.Int("max_port", 55000, "Maximuim UDP Port")	
 	flag.Parse()
+	
+	if *minPort <= 0 || *maxPort <= 0 || *minPort > *maxPort {
+		log.Fatalf("UDP range: bad range")
+	}	
 
 	if len(*publicIP) == 0 {
 		log.Fatalf("'public-ip' is required")
 	} else if len(*users) == 0 {
 		log.Fatalf("'users' is required")
-	}
+	}	
 
 	// Create a UDP listener to pass into pion/turn
 	// pion/turn itself doesn't allocate any UDP sockets, but lets the user pass them in
@@ -94,10 +101,12 @@ func main() {
 		PacketConnConfigs: []turn.PacketConnConfig{
 			{
 				PacketConn: &stunLogger{udpListener},
-				RelayAddressGenerator: &turn.RelayAddressGeneratorStatic{
+				RelayAddressGenerator: &turn.RelayAddressGeneratorPortRange{
 					RelayAddress: net.ParseIP(*publicIP), // Claim that we are listening on IP passed by user (This should be your Public IP)
 					Address:      "0.0.0.0",              // But actually be listening on every interface
-				},
+					MinPort:      uint16(*minPort),
+					MaxPort:      uint16(*maxPort),
+				},					
 			},
 		},
 	})
