@@ -14,7 +14,7 @@ import (
 	"regexp"
 	"strconv"
 	"syscall"
-
+	"github.com/pion/logging"
 	"github.com/pion/stun/v2"
 	"github.com/pion/turn/v3"
 )
@@ -54,6 +54,7 @@ func (s *stunLogger) ReadFrom(p []byte) (n int, addr net.Addr, err error) {
 func main() {
 	publicIP := flag.String("public-ip", "", "IP Address that TURN can be contacted by.")
 	users := flag.String("users", "", "List of username and password (e.g. \"user=pass,user=pass\")")
+	authSecret := flag.String("authSecret", "", "Shared secret for the Long Term Credential Mechanism")
 	realm := flag.String("realm", "pion.ly", "Realm (defaults to \"pion.ly\")")
 	
 	port := flag.Int("port", 3478, "Listening port.")	
@@ -67,8 +68,8 @@ func main() {
 
 	if len(*publicIP) == 0 {
 		log.Fatalf("'public-ip' is required")
-	} else if len(*users) == 0 {
-		log.Fatalf("'users' is required")
+	} else if len(*users) == 0 && len(*authSecret) == 0 {
+		log.Fatalf("'users' or 'authSecret' is required")
 	}	
 
 	// Create a UDP listener to pass into pion/turn
@@ -81,45 +82,79 @@ func main() {
 
 	// Cache -users flag for easy lookup later
 	// If passwords are stored they should be saved to your DB hashed using turn.GenerateAuthKey
+	
 	usersMap := map[string][]byte{}
+	
 	for _, kv := range regexp.MustCompile(`(\w+)=(\w+)`).FindAllStringSubmatch(*users, -1) {
 		usersMap[kv[1]] = turn.GenerateAuthKey(kv[1], *realm, kv[2])
 	}
-
-	s, err := turn.NewServer(turn.ServerConfig{
-		Realm: *realm,
-		// Set AuthHandler callback
-		// This is called every time a user tries to authenticate with the TURN server
-		// Return the key for that user, or false when no user is found
-		AuthHandler: func(username string, realm string, srcAddr net.Addr) ([]byte, bool) {
-			if key, ok := usersMap[username]; ok {
-				return key, true
-			}
-			return nil, false
-		},
-		// PacketConnConfigs is a list of UDP Listeners and the configuration around them
-		PacketConnConfigs: []turn.PacketConnConfig{
-			{
-				PacketConn: &stunLogger{udpListener},
-				RelayAddressGenerator: &turn.RelayAddressGeneratorPortRange{
-					RelayAddress: net.ParseIP(*publicIP), // Claim that we are listening on IP passed by user (This should be your Public IP)
-					Address:      "0.0.0.0",              // But actually be listening on every interface
-					MinPort:      uint16(*minPort),
-					MaxPort:      uint16(*maxPort),
-				},					
+	
+	if len(*authSecret) > 0 {	
+		logger := logging.NewDefaultLeveledLoggerForScope("lt-creds", logging.LogLevelTrace, os.Stdout)
+	
+		s, err := turn.NewServer(turn.ServerConfig{
+			Realm: *realm,		
+			AuthHandler: turn.LongTermTURNRESTAuthHandler(*authSecret, logger),
+			PacketConnConfigs: []turn.PacketConnConfig{
+				{
+					PacketConn: &stunLogger{udpListener},
+					RelayAddressGenerator: &turn.RelayAddressGeneratorPortRange{
+						RelayAddress: net.ParseIP(*publicIP), // Claim that we are listening on IP passed by user (This should be your Public IP)
+						Address:      "0.0.0.0",              // But actually be listening on every interface
+						MinPort:      uint16(*minPort),
+						MaxPort:      uint16(*maxPort),
+					},					
+				},
 			},
-		},
-	})
-	if err != nil {
-		log.Panic(err)
-	}
+		})
+		
+		if err != nil {
+			log.Panic(err)
+		}
 
-	// Block until user sends SIGINT or SIGTERM
-	sigs := make(chan os.Signal, 1)
-	signal.Notify(sigs, syscall.SIGINT, syscall.SIGTERM)
-	<-sigs
+		// Block until user sends SIGINT or SIGTERM
+		sigs := make(chan os.Signal, 1)
+		signal.Notify(sigs, syscall.SIGINT, syscall.SIGTERM)
+		<-sigs
 
-	if err = s.Close(); err != nil {
-		log.Panic(err)
+		if err = s.Close(); err != nil {
+			log.Panic(err)
+		}	
+		
+	} else {
+		
+		s, err := turn.NewServer(turn.ServerConfig{
+			Realm: *realm,		
+			AuthHandler: func(username string, realm string, srcAddr net.Addr) ([]byte, bool) {
+				if key, ok := usersMap[username]; ok {
+					return key, true
+				}
+				return nil, false
+			},
+			PacketConnConfigs: []turn.PacketConnConfig{
+				{
+					PacketConn: &stunLogger{udpListener},
+					RelayAddressGenerator: &turn.RelayAddressGeneratorPortRange{
+						RelayAddress: net.ParseIP(*publicIP), // Claim that we are listening on IP passed by user (This should be your Public IP)
+						Address:      "0.0.0.0",              // But actually be listening on every interface
+						MinPort:      uint16(*minPort),
+						MaxPort:      uint16(*maxPort),
+					},					
+				},
+			},
+		})
+		
+		if err != nil {
+			log.Panic(err)
+		}
+
+		// Block until user sends SIGINT or SIGTERM
+		sigs := make(chan os.Signal, 1)
+		signal.Notify(sigs, syscall.SIGINT, syscall.SIGTERM)
+		<-sigs
+
+		if err = s.Close(); err != nil {
+			log.Panic(err)
+		}		
 	}
 }
