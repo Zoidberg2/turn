@@ -51,8 +51,20 @@ func (s *stunLogger) ReadFrom(p []byte) (n int, addr net.Addr, err error) {
 	return
 }
 
+func resolveHostName(hostName string, ipaddress string) net.IP {	
+    ips, _ := net.LookupIP(hostName)
+    
+    for _, ip := range ips {
+        if ipv4 := ip.To4(); ipv4 != nil {
+			return ip
+        }
+    }
+	return net.ParseIP(ipaddress)
+}
+
 func main() {
 	publicIP := flag.String("public-ip", "", "IP Address that TURN can be contacted by.")
+	hostName := flag.String("host-name", "", "Host name that TURN can be contacted by.")
 	users := flag.String("users", "", "List of username and password (e.g. \"user=pass,user=pass\")")
 	authSecret := flag.String("authSecret", "", "Shared secret for the Long Term Credential Mechanism")
 	realm := flag.String("realm", "pion.ly", "Realm (defaults to \"pion.ly\")")
@@ -66,8 +78,8 @@ func main() {
 		log.Fatalf("UDP range: bad range")
 	}	
 
-	if len(*publicIP) == 0 {
-		log.Fatalf("'public-ip' is required")
+	if len(*hostName) == 0 || len(*publicIP) == 0 {
+		log.Fatalf("'public-ip' or 'host-name' is required")
 	} else if len(*users) == 0 && len(*authSecret) == 0 {
 		log.Fatalf("'users' or 'authSecret' is required")
 	}	
@@ -89,6 +101,7 @@ func main() {
 		usersMap[kv[1]] = turn.GenerateAuthKey(kv[1], *realm, kv[2])
 	}
 	
+	
 	if len(*authSecret) > 0 {	
 		logger := logging.NewDefaultLeveledLoggerForScope("lt-creds", logging.LogLevelTrace, os.Stdout)
 	
@@ -99,7 +112,7 @@ func main() {
 				{
 					PacketConn: &stunLogger{udpListener},
 					RelayAddressGenerator: &turn.RelayAddressGeneratorPortRange{
-						RelayAddress: net.ParseIP(*publicIP), // Claim that we are listening on IP passed by user (This should be your Public IP)
+						RelayAddress: resolveHostName(*hostName, *publicIP),
 						Address:      "0.0.0.0",              // But actually be listening on every interface
 						MinPort:      uint16(*minPort),
 						MaxPort:      uint16(*maxPort),
@@ -135,7 +148,7 @@ func main() {
 				{
 					PacketConn: &stunLogger{udpListener},
 					RelayAddressGenerator: &turn.RelayAddressGeneratorPortRange{
-						RelayAddress: net.ParseIP(*publicIP), // Claim that we are listening on IP passed by user (This should be your Public IP)
+						RelayAddress: resolveHostName(*hostName, *publicIP),
 						Address:      "0.0.0.0",              // But actually be listening on every interface
 						MinPort:      uint16(*minPort),
 						MaxPort:      uint16(*maxPort),
