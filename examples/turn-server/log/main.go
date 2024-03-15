@@ -51,17 +51,6 @@ func (s *stunLogger) ReadFrom(p []byte) (n int, addr net.Addr, err error) {
 	return
 }
 
-func resolveHostName(hostName string, ipaddress string) net.IP {	
-    ips, _ := net.LookupIP(hostName)
-    
-    for _, ip := range ips {
-        if ipv4 := ip.To4(); ipv4 != nil {
-			return ip
-        }
-    }
-	return net.ParseIP(ipaddress)
-}
-
 func main() {
 	publicIP := flag.String("public-ip", "", "IP Address that TURN can be contacted by.")
 	hostName := flag.String("host-name", "", "Host name that TURN can be contacted by.")
@@ -112,7 +101,8 @@ func main() {
 				{
 					PacketConn: &stunLogger{udpListener},
 					RelayAddressGenerator: &turn.RelayAddressGeneratorPortRange{
-						RelayAddress: resolveHostName(*hostName, *publicIP),
+						HostName: 	  *hostName, 
+						PublicIP: 	  *publicIP,
 						Address:      "0.0.0.0",              // But actually be listening on every interface
 						MinPort:      uint16(*minPort),
 						MaxPort:      uint16(*maxPort),
@@ -148,7 +138,8 @@ func main() {
 				{
 					PacketConn: &stunLogger{udpListener},
 					RelayAddressGenerator: &turn.RelayAddressGeneratorPortRange{
-						RelayAddress: resolveHostName(*hostName, *publicIP),
+						HostName: 	  *hostName, 
+						PublicIP: 	  *publicIP,
 						Address:      "0.0.0.0",              // But actually be listening on every interface
 						MinPort:      uint16(*minPort),
 						MaxPort:      uint16(*maxPort),

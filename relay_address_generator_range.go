@@ -15,8 +15,10 @@ import (
 // RelayAddressGeneratorPortRange can be used to only allocate connections inside a defined port range.
 // Similar to the RelayAddressGeneratorStatic a static ip address can be set.
 type RelayAddressGeneratorPortRange struct {
-	// RelayAddress is the IP returned to the user when the relay is created
-	RelayAddress net.IP
+	// HostName is the hostname resolved into an IP address returned to the user when the relay is created
+	HostName string
+	// PublicIP is the default IP returned to the user when the relay is created	
+	PublicIP string
 
 	// MinPort the minimum port to allocate
 	MinPort uint16
@@ -58,13 +60,26 @@ func (r *RelayAddressGeneratorPortRange) Validate() error {
 		return errMinPortNotZero
 	case r.MaxPort == 0:
 		return errMaxPortNotZero
-	case r.RelayAddress == nil:
+	case len(r.HostName) == 0 || len(r.PublicIP) == 0:
 		return errRelayAddressInvalid
 	case r.Address == "":
 		return errListeningAddressInvalid
 	default:
 		return nil
 	}
+}
+
+func resolveHostName(hostName string, ipaddress string) net.IP {	
+    ips, _ := net.LookupIP(hostName)
+    
+    for _, ip := range ips {
+        if ipv4 := ip.To4(); ipv4 != nil {
+			fmt.Printf("resolveHostName - lookup: %s = %s \n", hostName, ip.String())
+			return ip
+        }
+    }
+	fmt.Printf("resolveHostName - default: %s = %s \n", hostName, ipaddress)	
+	return net.ParseIP(ipaddress)
 }
 
 // AllocatePacketConn generates a new PacketConn to receive traffic on and the IP/Port to populate the allocation response with
@@ -79,7 +94,7 @@ func (r *RelayAddressGeneratorPortRange) AllocatePacketConn(network string, requ
 			return nil, nil, errNilConn
 		}
 
-		relayAddr.IP = r.RelayAddress
+		relayAddr.IP = resolveHostName(r.HostName, r.PublicIP)
 		return conn, relayAddr, nil
 	}
 
@@ -95,7 +110,7 @@ func (r *RelayAddressGeneratorPortRange) AllocatePacketConn(network string, requ
 			return nil, nil, errNilConn
 		}
 
-		relayAddr.IP = r.RelayAddress
+		relayAddr.IP = resolveHostName(r.HostName, r.PublicIP)
 		return conn, relayAddr, nil
 	}
 
