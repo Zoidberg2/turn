@@ -57,12 +57,16 @@ func main() {
 	users := flag.String("users", "", "List of username and password (e.g. \"user=pass,user=pass\")")
 	authSecret := flag.String("authSecret", "", "Shared secret for the Long Term Credential Mechanism")
 	realm := flag.String("realm", "pion.ly", "Realm (defaults to \"pion.ly\")")
-	
+	listenIP := flag.String("listen-ip", "0.0.0.0", "IP Address of the interface that Pionturn will listen.")
 	port := flag.Int("port", 3478, "Listening port.")	
 	minPort := flag.Int("min_port", 50000, "Minimuim UDP Port")
 	maxPort := flag.Int("max_port", 55000, "Maximuim UDP Port")	
 	flag.Parse()
-	
+
+	if net.ParseIP(*listenIP) == nil {
+		log.Fatalf("Bad Listening IP")
+	}
+
 	if *minPort <= 0 || *maxPort <= 0 || *minPort > *maxPort {
 		log.Fatalf("UDP range: bad range")
 	}	
@@ -103,7 +107,7 @@ func main() {
 					RelayAddressGenerator: &turn.RelayAddressGeneratorPortRange{
 						HostName: 	  *hostName, 
 						PublicIP: 	  *publicIP,
-						Address:      "0.0.0.0",              // But actually be listening on every interface
+						Address:      *listenIP,              // But actually be listening on every interface
 						MinPort:      uint16(*minPort),
 						MaxPort:      uint16(*maxPort),
 					},					
@@ -140,7 +144,7 @@ func main() {
 					RelayAddressGenerator: &turn.RelayAddressGeneratorPortRange{
 						HostName: 	  *hostName, 
 						PublicIP: 	  *publicIP,
-						Address:      "0.0.0.0",              // But actually be listening on every interface
+						Address:      *listenIP,              // But actually be listening on every interface
 						MinPort:      uint16(*minPort),
 						MaxPort:      uint16(*maxPort),
 					},					
